@@ -8,12 +8,13 @@ import (
 	"io/ioutil"
 	"log"
 	"net/http"
+	"os"
 
 	"github.com/slack-go/slack"
 	"github.com/slack-go/slack/slackevents"
 )
 
-var api = slack.New("DUMMYTOKEN")
+var api = slack.New(os.Getenv("SLACK_COPROXY_SLACK_BOT_TOKEN"))
 
 func main() {
 
@@ -28,22 +29,21 @@ func main() {
 		}
 
 		// シグネチャ計算
-		/*
-			signingSecret := os.Getenv("SLACK_SIGNING_SECRET")
-			sv, err := slack.NewSecretsVerifier(r.Header, signingSecret)
-			if err != nil {
-				w.WriteHeader(http.StatusBadRequest)
-				return
-			}
-			if _, err := sv.Write(body); err != nil {
-				w.WriteHeader(http.StatusInternalServerError)
-				return
-			}
-			if err := sv.Ensure(); err != nil {
-				w.WriteHeader(http.StatusUnauthorized)
-				return
-			}
-			//*/
+		signingSecret := os.Getenv("SLACK_COPROXY_SLACK_SIGNING_SECRET")
+		sv, err := slack.NewSecretsVerifier(r.Header, signingSecret)
+		if err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		if _, err := sv.Write(body); err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		if err := sv.Ensure(); err != nil {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		//*/
 
 		eventsAPIEvent, err := slackevents.ParseEvent(json.RawMessage(body), slackevents.OptionNoVerifyToken())
 		if err != nil {
@@ -70,16 +70,27 @@ func main() {
 
 			// ここ本命
 			switch innerEvent.Data.(type) {
+			case *slackevents.MessageEvent:
+				log.Println("slack-coproxy: message_event")
+				req, err := http.NewRequest("POST", "http://localhost:5001/slack/event", bytes.NewBuffer([]byte(body)))
+				if err != nil {
+					log.Println("http.NewRequest: ", err.Error())
+				}
+				req.Header = r.Header
+				log.Println(httpClient.Do(req))
 			case *slackevents.AppMentionEvent:
 				log.Println("slack-coproxy: app_mention_event")
-				log.Println(httpClient.Post("http://localhost:3000/slack/event", "application/json", bytes.NewBuffer([]byte(body))))
-				log.Println(httpClient.Post("http://localhost:3000/slack/event", "application/json", bytes.NewBuffer([]byte(body))))
-				log.Println(httpClient.Post("http://localhost:3000/slack/event", "application/json", bytes.NewBuffer([]byte(body))))
+				req, err := http.NewRequest("POST", "http://localhost:5001/slack/event", bytes.NewBuffer([]byte(body)))
+				if err != nil {
+					log.Println("http.NewRequest: ", err.Error())
+				}
+				req.Header = r.Header
+				log.Println(httpClient.Do(req))
 
 			}
 		}
 	})
 
 	fmt.Println("[INFO] Server listening")
-	http.ListenAndServe(":3001", nil)
+	http.ListenAndServe(":5000", nil)
 }
