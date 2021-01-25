@@ -16,6 +16,15 @@ import (
 
 var api = slack.New(os.Getenv("SLACK_COPROXY_SLACK_BOT_TOKEN"))
 
+var config = map[string][]string{
+	"app_mention_event": {
+		"http://localhost:5001/slack/event",
+	},
+	"message_event": {
+		"http://localhost:5001/slack/event",
+	},
+}
+
 func main() {
 
 	http.HandleFunc("/slack/event", func(w http.ResponseWriter, r *http.Request) {
@@ -32,14 +41,17 @@ func main() {
 		signingSecret := os.Getenv("SLACK_COPROXY_SLACK_SIGNING_SECRET")
 		sv, err := slack.NewSecretsVerifier(r.Header, signingSecret)
 		if err != nil {
+			log.Println("slack.NewSecretsVerifier")
 			w.WriteHeader(http.StatusBadRequest)
 			return
 		}
 		if _, err := sv.Write(body); err != nil {
+			log.Println("sv.Write(body)")
 			w.WriteHeader(http.StatusInternalServerError)
 			return
 		}
 		if err := sv.Ensure(); err != nil {
+			log.Println("sv.Ensure()")
 			w.WriteHeader(http.StatusUnauthorized)
 			return
 		}
@@ -72,20 +84,26 @@ func main() {
 			switch innerEvent.Data.(type) {
 			case *slackevents.MessageEvent:
 				log.Println("slack-coproxy: message_event")
-				req, err := http.NewRequest("POST", "http://localhost:5001/slack/event", bytes.NewBuffer([]byte(body)))
-				if err != nil {
-					log.Println("http.NewRequest: ", err.Error())
+				for _, v := range config["message_event"] {
+					req, err := http.NewRequest("POST", v, bytes.NewBuffer([]byte(body)))
+					if err != nil {
+						log.Println("http.NewRequest: ", err.Error())
+						continue
+					}
+					req.Header = r.Header
+					log.Println(httpClient.Do(req))
 				}
-				req.Header = r.Header
-				log.Println(httpClient.Do(req))
 			case *slackevents.AppMentionEvent:
 				log.Println("slack-coproxy: app_mention_event")
-				req, err := http.NewRequest("POST", "http://localhost:5001/slack/event", bytes.NewBuffer([]byte(body)))
-				if err != nil {
-					log.Println("http.NewRequest: ", err.Error())
+				for _, v := range config["app_mention_event"] {
+					req, err := http.NewRequest("POST", v, bytes.NewBuffer([]byte(body)))
+					if err != nil {
+						log.Println("http.NewRequest: ", err.Error())
+						continue
+					}
+					req.Header = r.Header
+					log.Println(httpClient.Do(req))
 				}
-				req.Header = r.Header
-				log.Println(httpClient.Do(req))
 
 			}
 		}
